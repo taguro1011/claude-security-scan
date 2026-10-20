@@ -57,14 +57,14 @@ Mac / Windows 本体・手元の全gitリポジトリ・GitHub・Vercelと公開
 PowerShell で:
 
 ```powershell
-git clone https://github.com/YOUR-GITHUB-NAME/claude-security-scan "$env:USERPROFILE\.claude\skills\security-scan"
+git clone https://github.com/taguro1011/claude-security-scan "$env:USERPROFILE\.claude\skills\security-scan"
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\security-scan\scripts\install-tools.ps1"   # gitleaks と osv-scanner を取得（SHA256を検証）
 ```
 
 ### Mac
 
 ```bash
-git clone https://github.com/YOUR-GITHUB-NAME/claude-security-scan ~/.claude/skills/security-scan
+git clone https://github.com/taguro1011/claude-security-scan ~/.claude/skills/security-scan
 bash ~/.claude/skills/security-scan/scripts/install-tools.sh   # gitleaks と osv-scanner を取得（SHA256を検証）
 ```
 
