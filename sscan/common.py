@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -18,11 +20,36 @@ ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin"
 SEVERITIES = ["critical", "high", "medium", "low", "info"]
 SEV_JA = {"critical": "緊急", "high": "高", "medium": "中", "low": "低", "info": "情報"}
+IS_WIN = sys.platform == "win32"
 
-# launchd から呼ばれても CLI が見つかるように PATH を補う
-os.environ["PATH"] = ":".join([str(BIN), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin", os.environ.get("PATH", "")])
+
+def _extra_path() -> list[str]:
+    """launchd / タスクスケジューラから呼ばれても CLI が見つかるように補う置き場。"""
+    if not IS_WIN:
+        return ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    env = os.environ.get
+    cands = [
+        Path(env("LOCALAPPDATA", "")) / "Microsoft/WinGet/Links",
+        Path(env("ProgramFiles", "")) / "GitHub CLI",
+        Path(env("ProgramFiles", "")) / "Git/cmd",
+        Path(env("ProgramFiles", "")) / "Amazon/AWSCLIV2",
+        Path(env("ProgramFiles", "")) / "Microsoft SDKs/Azure/CLI2/wbin",
+        Path(env("ProgramFiles(x86)", "")) / "Microsoft SDKs/Azure/CLI2/wbin",
+        Path(env("LOCALAPPDATA", "")) / "Google/Cloud SDK/google-cloud-sdk/bin",
+        Path(env("APPDATA", "")) / "npm",
+        Path.home() / "scoop/shims",
+    ]
+    return [str(p) for p in cands if str(p) not in (".", "") and p.is_dir()]
+
+
+os.environ["PATH"] = os.pathsep.join([str(BIN), *_extra_path(), os.environ.get("PATH", "")])
 os.environ.setdefault("USER", Path.home().name)
 os.environ.setdefault("HOME", str(Path.home()))
+if IS_WIN:
+    # az / gcloud など Python製CLIの出力を UTF-8 にそろえる（日本語Windowsの既定は cp932）
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    # 子プロセス（cmd.exe 等）にも「今いるフォルダの実行ファイルを探さない」を伝える
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
 
 
 @dataclass
@@ -85,20 +112,99 @@ class Result:
 
 def tool(name: str) -> str | None:
     """同梱の bin/ を優先し、無ければ PATH から探す。見つからなければ None。"""
-    local = BIN / name
-    if local.exists():
-        return str(local)
-    return shutil.which(name)
+    for local in (BIN / name, BIN / f"{name}.exe"):
+        if local.is_file():
+            return str(local)
+    return which(name)
+
+
+_WIN_EXTS = (".exe", ".cmd", ".bat", ".com")
+
+
+def which(name: str) -> str | None:
+    """Windows では「今いるフォルダ」を探さない which。
+    shutil.which は Python 3.11 だとカレントディレクトリを最初に探すので、怪しいリポジトリの中で実行すると
+    そこに置かれた git.cmd などを拾ってしまう。PATH の絶対パスと、.exe/.cmd/.bat/.com だけを見る。"""
+    if not IS_WIN:
+        return shutil.which(name)
+    exts = ("",) if name.lower().endswith(_WIN_EXTS) else _WIN_EXTS
+    if ntpath.isabs(name):
+        return next((name + e for e in exts if os.path.isfile(name + e)), None)
+    if ntpath.dirname(name):
+        return None  # 相対パスは受け付けない
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        d = d.strip().strip('"')
+        if not d or not ntpath.isabs(d):
+            continue
+        for e in exts:
+            cand = ntpath.join(d, name + e)
+            if os.path.isfile(cand):
+                return cand
+    return None
+
+
+def system_exe(name: str) -> str:
+    """Windows の System32 にある実行ファイルの絶対パス（32bit版Pythonからでも64bit版を使う）。"""
+    root = os.environ.get("SystemRoot", r"C:\Windows")
+    native = ntpath.join(root, "Sysnative")  # 32bit プロセスから見た本物の System32
+    base = native if os.path.isdir(native) else ntpath.join(root, "System32")
+    return ntpath.join(base, name)
+
+
+def powershell() -> str:
+    return system_exe(r"WindowsPowerShell\v1.0\powershell.exe")
+
+
+# cmd.exe は二重引用符の中でも % と ! を展開する。引数に混ざっていたら .cmd 経由では実行しない
+_CMD_UNSAFE = re.compile(r'["%!\r\n\x00]')
+
+
+def _win_argv(cmd: list[str]) -> list[str] | str:
+    """Windows では az / gcloud / vercel 等が .cmd なので、PATH から解決し、.cmd/.bat は安全に引用して cmd.exe に渡す。"""
+    exe = which(cmd[0])
+    if not exe:
+        raise FileNotFoundError(cmd[0])
+    if not exe.lower().endswith((".cmd", ".bat")):
+        return [exe, *cmd[1:]]
+    parts = [exe, *cmd[1:]]
+    if any(_CMD_UNSAFE.search(a) for a in parts):
+        raise ValueError("cmd.exe で安全に渡せない文字を含む引数")
+    # /s: 外側の引用符だけを外す。各引数は "..." で囲むので & | < > ^ ( ) はそのまま文字として渡る
+    return f'"{system_exe("cmd.exe")}" /d /s /c "' + " ".join(f'"{a}"' for a in parts) + '"'
+
+
+def _kill_tree(p: subprocess.Popen):
+    """タイムアウト時に子プロセスごと止める（.cmd 経由の node / python が残ってパイプを掴み続けるのを防ぐ）。"""
+    if IS_WIN:
+        subprocess.run([system_exe("taskkill.exe"), "/T", "/F", "/PID", str(p.pid)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    p.kill()
 
 
 def run(cmd: list[str], timeout: int = 120, cwd: str | None = None) -> tuple[int, str, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
-        return p.returncode, p.stdout, p.stderr
+        kw = {}
+        if IS_WIN:
+            argv = _win_argv(cmd)
+            kw["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # 定期実行中に黒い窓を出さない
+        else:
+            argv = cmd
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
+                              encoding="utf-8", errors="replace", cwd=cwd, **kw) as p:
+            try:
+                out, err = p.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _kill_tree(p)
+                try:
+                    p.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+                return 124, "", f"timeout after {timeout}s"
+            return p.returncode, out or "", err or ""
+    except ValueError as e:
+        return 126, "", str(e)
     except FileNotFoundError:
         return 127, "", f"command not found: {cmd[0]}"
-    except subprocess.TimeoutExpired:
-        return 124, "", f"timeout after {timeout}s"
 
 
 def run_json(cmd: list[str], timeout: int = 120, cwd: str | None = None):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""security-scan: Mac・コード・GitHub・Web/Vercel・AWS・Gmail を読み取り専用で横断チェックする。
+"""security-scan: Mac/Windows・コード・GitHub・Web/Vercel・AWS・Gmail を読み取り専用で横断チェックする。
 
 使い方:
   security-scan                    # 全部
@@ -20,30 +20,45 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sscan import aws, azure, cloudflare, gcp, github, gmail, mac, report, repos, supabase, web  # noqa: E402
-from sscan.common import ROOT, WHOLE, Result, run  # noqa: E402
+from sscan import aws, azure, cloudflare, gcp, github, gmail, mac, report, repos, supabase, web, windows  # noqa: E402
+from sscan.common import IS_WIN, ROOT, WHOLE, Result, powershell, run  # noqa: E402
 
-MODULES = {"mac": mac, "repos": repos, "github": github, "web": web, "aws": aws, "gcp": gcp, "azure": azure,
+MODULES = {"mac": mac, "windows": windows, "repos": repos, "github": github, "web": web, "aws": aws, "gcp": gcp, "azure": azure,
            "cloudflare": cloudflare, "supabase": supabase, "gmail": gmail}
 REPORTS = Path(os.environ.get("SECURITY_SCAN_REPORTS", ROOT / "reports"))
 CONFIG_CANDIDATES = [Path.home() / ".config/security-scan/config.toml", ROOT / "config.toml"]
 
 
+def _setup_console():
+    """日本語Windows(cp932)でも「—」等で落ちないよう出力をUTF-8に。pythonw（定期実行）は標準出力が無いのでログへ。"""
+    if sys.stdout is None or sys.stderr is None:
+        REPORTS.mkdir(parents=True, exist_ok=True)
+        log = open(REPORTS / "schedule.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115
+        sys.stdout = sys.stdout or log
+        sys.stderr = sys.stderr or log
+    for s in (sys.stdout, sys.stderr):
+        if hasattr(s, "reconfigure"):
+            s.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main():
+    _setup_console()
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="")
     ap.add_argument("--skip", default="")
     ap.add_argument("--config", default="", help="既定は ~/.config/security-scan/config.toml → 同梱の config.toml。無くても自動検出で動く")
     ap.add_argument("--demo", action="store_true", help="見本データでレポートだけ作る（スクショ・動作確認用。何もスキャンしない）")
-    ap.add_argument("--notify", action="store_true", help="新しい緊急/高があればmacOS通知")
+    ap.add_argument("--notify", action="store_true", help="新しい緊急/高があればデスクトップ通知（macOS / Windows）")
     ap.add_argument("--open", action="store_true", help="終了後にレポートをブラウザで開く")
     a = ap.parse_args()
 
     cfg_path = Path(a.config) if a.config else next((p for p in CONFIG_CANDIDATES if p.exists()), None)
-    cfg = tomllib.loads(cfg_path.read_text()) if cfg_path else {}
+    cfg = tomllib.loads(cfg_path.read_text(encoding="utf-8-sig")) if cfg_path else {}
     mods = [m for m in (a.only.split(",") if a.only else MODULES) if m and m not in a.skip.split(",")]
-    if sys.platform != "darwin" and "mac" in mods and not a.only:
-        mods.remove("mac")
+    # 自分のOSでないモジュールは --only で明示しない限り外す
+    for m, plat in (("mac", "darwin"), ("windows", "win32")):
+        if sys.platform != plat and m in mods and not a.only:
+            mods.remove(m)
     started = datetime.now()
     os.umask(0o077)  # レポートには弱点の一覧が入るので本人以外読めないようにする
     outdir = REPORTS / (started.strftime("%Y-%m-%d_%H%M%S") + ("_demo" if a.demo else ""))
@@ -76,25 +91,66 @@ def main():
     meta = {"demo": a.demo, "started": started.strftime("%Y-%m-%d %H:%M"), "elapsed": int((datetime.now() - started).total_seconds()), "modules": mods}
     report.write(outdir, meta, findings, coverage, new, resolved)
 
-    latest = REPORTS / "latest"
     if not a.demo:  # 見本は latest を上書きしない（次回の差分が壊れるため）
-        if latest.is_symlink() or latest.exists():
-            latest.unlink()
-        latest.symlink_to(outdir.name)
+        _link_latest(outdir)
 
     hot = [f for f in findings if f["key"] in new and f["severity"] in ("critical", "high")]
-    print((outdir / "summary.md").read_text())
+    print((outdir / "summary.md").read_text(encoding="utf-8"))
     print(f"レポート: {outdir / 'report.html'}")
     if a.notify and hot:
         msg = f"新しい緊急/高リスク {len(hot)}件: " + hot[0]["title"][:40]
+        _notify(msg)
+    if a.open:
+        if IS_WIN:
+            try:
+                os.startfile(outdir / "report.html")  # noqa: S606  既定のブラウザで開く
+            except OSError:
+                print(f"ブラウザで開けませんでした: {outdir / 'report.html'}")
+        else:
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            rc, _, err = run([opener, str(outdir / "report.html")])
+            if rc != 0:
+                print(f"ブラウザで開けませんでした（{opener}）: {outdir / 'report.html'}")
+
+
+def _notify(msg: str):
+    if sys.platform == "darwin":
         # 文言はスクリプトに埋め込まず argv で渡す（finding由来の文字列をAppleScriptとして解釈させない）
         run(["osascript", "-e", "on run argv", "-e", 'display notification (item 1 of argv) with title "セキュリティスキャン" sound name "Basso"',
              "-e", "end run", msg])
-    if a.open:
-        opener = "open" if sys.platform == "darwin" else "xdg-open"
-        rc, _, err = run([opener, str(outdir / "report.html")])
-        if rc != 0:
-            print(f"ブラウザで開けませんでした（{opener}）: {outdir / 'report.html'}")
+    elif IS_WIN:
+        # 文言はスクリプトに埋め込まず環境変数で渡す（finding由来の文字列をPowerShellとして解釈させない）
+        os.environ["SSCAN_TOAST"] = msg
+        try:
+            run([powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                 "-File", str(ROOT / "sscan" / "notify_toast.ps1")], 30)
+        finally:
+            os.environ.pop("SSCAN_TOAST", None)
+
+
+def _link_latest(outdir: Path):
+    """reports/latest を最新の結果に向ける。Windows は管理者権限なしでシンボリックリンクを作れないのでジャンクションを使う。"""
+    latest = REPORTS / "latest"
+    try:
+        if latest.is_symlink():
+            latest.unlink()
+        elif getattr(latest, "is_junction", lambda: False)():  # Python 3.12+
+            os.rmdir(latest)  # ジャンクションだけを外す（中身は消えない）
+        elif os.path.lexists(latest):  # 壊れたジャンクションも消す
+            try:
+                latest.unlink()
+            except OSError:
+                os.rmdir(latest)  # 古いPythonで is_junction が無い場合のジャンクション
+        try:
+            latest.symlink_to(outdir.name, target_is_directory=True)
+        except OSError:
+            if not IS_WIN:
+                raise
+            import _winapi
+            _winapi.CreateJunction(str(outdir.resolve()), str(latest))
+    except OSError as e:
+        (REPORTS / "latest.txt").write_text(str(outdir) + "\n", encoding="utf-8")
+        print(f"reports/latest を作れませんでした（{type(e).__name__}）。最新の場所は reports/latest.txt に書きました")
 
 
 def _previous(current: Path, mods: set[str]):
@@ -103,7 +159,7 @@ def _previous(current: Path, mods: set[str]):
         if d == current or d.name.endswith("_demo") or not (d / "findings.json").exists():
             continue
         try:
-            data = json.loads((d / "findings.json").read_text())
+            data = json.loads((d / "findings.json").read_text(encoding="utf-8"))
             if set(data["meta"]["modules"]) >= mods:
                 return ([f for f in data["findings"] if f["module"] in mods and {"key", "severity", "title", "target"} <= f.keys()],
                         data.get("coverage", []))

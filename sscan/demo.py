@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from .common import Result
 
-NEW_KEYS = {"launch|/Library/LaunchDaemons/com.example.helper.plist", "leak|demo|stripe", "gh-2fa|example-inc"}
+NEW_KEYS = {"launch|/Library/LaunchDaemons/com.example.helper.plist", "leak|demo|stripe", "gh-2fa|example-inc",
+            "wstart|run|HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run|ExampleUpdater"}
 
 
 def result() -> Result:
@@ -14,6 +15,18 @@ def result() -> Result:
       "心当たりがなければ launchctl bootout で止めてから plist を隔離する", key="launch|/Library/LaunchDaemons/com.example.helper.plist")
     a("mac", "high", "ファイアウォールがオフ", "このMac", "Firewall is disabled. (State = 0)", "システム設定 → ネットワーク → ファイアウォール をオンにする")
     a("mac", "low", "外部から接続を受け付けるポート 3000", "tcp/3000", "プロセス: node", "開発サーバーは 127.0.0.1 にバインドする")
+    a("windows", "critical", "ディスク暗号化（BitLocker / デバイスの暗号化）がオフ", "このPC C:",
+      "盗難・紛失時に、ディスクを取り出すだけで全データが読まれる",
+      "Pro: コントロールパネル → BitLocker ドライブ暗号化 で有効にする。Home: 設定 → プライバシーとセキュリティ → デバイスの暗号化 をオン")
+    a("windows", "high", "サポートが終了したWindows 11のバージョン（24H2）", "このPC",
+      "ビルド 26100.1000（24H2） / Professional\n更新終了日 2026-10-13。これ以降セキュリティ修正が届かない",
+      "設定 → Windows Update から新しいバージョン（25H2 など）へ更新する（無料）", key="w-os-eos")
+    a("windows", "high", "常駐プログラム: ExampleUpdater", "自動起動（レジストリ） HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\ExampleUpdater",
+      "一時フォルダ・Downloads・Public などから起動している常駐。マルウェアの典型パターン\n起動: C:\\Users\\taro\\AppData\\Local\\Temp\\upd.exe（引数は秘密が入りうるので記録しない）",
+      "心当たりがなければ、タスクマネージャーの「スタートアップ アプリ」で無効化し、Windows セキュリティでフルスキャンする",
+      key="wstart|run|HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run|ExampleUpdater")
+    a("windows", "medium", "スリープ復帰時にサインインを求めない設定", "このPC", "電源接続時は、スリープから戻るとそのまま使える",
+      "設定 → アカウント → サインイン オプション で再度サインインを求めるタイミングを設定する")
     a("repos", "critical", "コミット履歴に秘密情報らしき文字列: stripe-access-token", "~/dev/shop-demo  (example-inc/shop-demo・公開)",
       "2箇所（値は伏せ字）\nsrc/pay.ts:12 (3f2a91c)\n.env.local:4 (8bd0e17)",
       "①そのキーを発行元で無効化・再発行 ②偽値なら .gitleaksignore に登録 ③公開リポなら履歴からの除去も検討", key="leak|demo|stripe")
@@ -37,7 +50,7 @@ def result() -> Result:
     a("cloudflare", "medium", "SSL/TLS が Flexible（Cloudflare→サーバー間が暗号化されない）", "example.com", "", "Full (strict) に")
     a("gmail", "high", "全メールの自動転送がオン", "you@example.com", "転送先: unknown@example.net", "覚えがなければ即オフにしてパスワード変更")
     a("gmail", "info", "このアカウントから送信できる別アドレス（Send As）", "you@example.com", "info@example.com", "")
-    for m, item in [("mac", "FileVault"), ("mac", "Gatekeeper"), ("github", "example-inc Dependabot"), ("aws", "prod (000000000000)"),
+    for m, item in [("mac", "FileVault"), ("mac", "Gatekeeper"), ("windows", "ウイルス対策"), ("windows", "ファイアウォール"), ("github", "example-inc Dependabot"), ("aws", "prod (000000000000)"),
                     ("gmail", "you@example.com")]:
         r.cov(m, item, "ok")
     r.cov("gmail", "Workspace管理 (example.com)", "skip", "Admin APIはドメイン全体の委任が必要")

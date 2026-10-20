@@ -6,6 +6,10 @@ GITLEAKS_VERSION="8.30.1"
 OSV_VERSION="2.7.0"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Windows の Git Bash（Claude Code の既定シェル）から呼ばれたら PowerShell 版に任せる
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$ROOT/scripts/install-tools.ps1")" ;;
+esac
 BIN="$ROOT/bin"
 mkdir -p "$BIN"
 TMP="$(mktemp -d)"

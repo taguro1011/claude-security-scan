@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .common import SEV_JA, SEVERITIES
 
-MOD_JA = {"mac": "Mac本体", "repos": "コード・リポジトリ", "github": "GitHub", "web": "Webサイト・Vercel", "aws": "AWS", "gcp": "Google Cloud", "azure": "Azure",
+MOD_JA = {"mac": "Mac本体", "windows": "Windows本体", "repos": "コード・リポジトリ", "github": "GitHub", "web": "Webサイト・Vercel", "aws": "AWS", "gcp": "Google Cloud", "azure": "Azure",
           "cloudflare": "Cloudflare", "supabase": "Supabase", "gmail": "メール・Googleアカウント"}
 COLORS = {"critical": "#c62828", "high": "#ef6c00", "medium": "#f9a825", "low": "#1e88e5", "info": "#78909c"}
 
@@ -42,9 +42,9 @@ def write(outdir: Path, meta: dict, findings: list[dict], coverage: list[dict], 
     order = {s: i for i, s in enumerate(SEVERITIES)}
     findings.sort(key=lambda f: (order[f["severity"]], f["module"], f["title"], f["target"]))
     (outdir / "findings.json").write_text(json.dumps({"meta": meta, "findings": findings, "coverage": coverage,
-                                                       "new": sorted(new), "resolved": resolved}, ensure_ascii=False, indent=1))
-    (outdir / "summary.md").write_text(_md(meta, findings, coverage, new, resolved))
-    (outdir / "report.html").write_text(_html(meta, findings, coverage, new, resolved))
+                                                       "new": sorted(new), "resolved": resolved}, ensure_ascii=False, indent=1), encoding="utf-8")
+    (outdir / "summary.md").write_text(_md(meta, findings, coverage, new, resolved), encoding="utf-8")
+    (outdir / "report.html").write_text(_html(meta, findings, coverage, new, resolved), encoding="utf-8")
 
 
 def _counts(findings):
@@ -92,7 +92,7 @@ def _html(meta, findings, coverage, new, resolved) -> str:
     res = "".join(f"<li>[{e(SEV_JA[f['severity']])}] {e(f['title'])} — {e(f['target'])}</li>" for f in resolved)
     return f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>セキュリティスキャン {e(meta['started'])}</title><style>
-body{{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;background:#fff;color:#1a1a1a;margin:0;padding:24px 16px;max-width:1100px;margin:auto}}
+body{{font-family:"Hiragino Sans","Yu Gothic UI","Meiryo","Noto Sans JP",sans-serif;background:#fff;color:#1a1a1a;margin:0;padding:24px 16px;max-width:1100px;margin:auto}}
 h1{{font-size:24px;margin:0 0 4px}} .demo{{font-size:12px;background:#6a1b9a;color:#fff;border-radius:6px;padding:2px 8px;margin-left:10px;vertical-align:middle}} .sub{{color:#666;font-size:13px;margin-bottom:20px}}
 .cards{{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px}}
 .card{{border:2px solid var(--c);border-radius:12px;background:#fff;padding:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;font:inherit}}

@@ -32,7 +32,7 @@ def discover(roots: list[str], exclude: list[str], max_depth: int) -> list[Path]
             if len(p.parts) - base_depth >= max_depth:
                 dirnames[:] = []
                 continue
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not any(x in str(p / d) for x in exclude)]
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not any(x in (p / d).as_posix() + "/" for x in exclude)]  # Windowsの \ でも除外が効くように
     # worktree は本体と履歴を共有するので、git の共通ディレクトリごとに1つ（パスが最も短いもの）だけ残す
     by_common: dict[str, Path] = {}
     for repo in sorted(set(found), key=lambda x: (len(x.parts), str(x))):
@@ -59,7 +59,8 @@ def _owners_and_public() -> tuple[set[str], set[str]]:
     return {o.lower() for o in owners}, pub
 
 
-DEFAULT_ROOTS = ["~/dev", "~/work", "~/projects", "~/src", "~/code", "~/Developer", "~/repos", "~/git", "~/Documents/GitHub"]
+DEFAULT_ROOTS = ["~/dev", "~/work", "~/projects", "~/src", "~/code", "~/Developer", "~/repos", "~/git", "~/Documents/GitHub",
+                 "~/source/repos", "~/OneDrive/Documents/GitHub"]  # 後ろ2つは Visual Studio / OneDrive 配下の GitHub Desktop（Windows）
 
 
 def scan(cfg: dict) -> Result:
@@ -101,9 +102,9 @@ def _scan_dir(r: Result, d: Path):
             r.cov(M, f"gitleaks {_label(d)}", "error", short_err(err[-200:]), blocks=[("ローカルの置き場", _label(d))])
             return
         by_file: dict[str, list[str]] = {}
-        own_reports = str(ROOT / "reports")
-        for l in json.loads(Path(rp).read_text() or "[]"):
-            if l.get("File", "").startswith(own_reports):  # このツール自身のレポート（差分キーのハッシュが誤検知される）
+        own_reports = (ROOT / "reports").as_posix()
+        for l in json.loads(Path(rp).read_text(encoding="utf-8") or "[]"):
+            if l.get("File", "").replace("\\", "/").startswith(own_reports):  # このツール自身のレポート（差分キーのハッシュが誤検知される）
                 continue
             by_file.setdefault(l.get("File", "?"), []).append(f'{l.get("RuleID")} 行{l.get("StartLine")}')
         for f, hits in by_file.items():
@@ -133,7 +134,7 @@ def _scan_repo(repo: Path, public: set[str], c: dict) -> Result:
     r = Result()
     remote = _remote(repo)
     is_public = remote in public
-    inactive = any(x in str(repo) for x in ("/_archive/", "/_inactive/"))
+    inactive = any(x in repo.as_posix() + "/" for x in ("/_archive/", "/_inactive/"))
     where = _label(repo) + (f"  ({remote}・公開)" if is_public else (f"  ({remote})" if remote else "  (リモートなし)"))
 
     # 1) .env の追跡
@@ -152,7 +153,7 @@ def _scan_repo(repo: Path, public: set[str], c: dict) -> Result:
             rc, _, err = run([GITLEAKS, "git", str(repo), "--redact", "--no-banner", "--log-level", "error",
                               "--report-format", "json", "--report-path", rp, "--exit-code", "0"], timeout=c.get("gitleaks_timeout", 600))
             if rc == 0:
-                leaks = json.loads(Path(rp).read_text() or "[]")
+                leaks = json.loads(Path(rp).read_text(encoding="utf-8") or "[]")
                 by_rule: dict[str, list[str]] = {}
                 for l in leaks:
                     by_rule.setdefault(l.get("RuleID", "?"), []).append(f'{l.get("File")}:{l.get("StartLine")} ({(l.get("Commit") or "")[:7]})')

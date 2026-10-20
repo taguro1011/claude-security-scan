@@ -4,8 +4,13 @@
 [mac]
 check_updates = true            # softwareupdate -l（30秒ほどかかる）
 
+[windows]
+check_updates = true            # 未適用のWindows更新を検索する（Windows Update に問い合わせるので数分かかることがある）
+timeout = 300                   # 本体チェック全体の上限（秒）
+updates_timeout = 300
+
 [repos]
-# 省略時は ~/dev ~/work ~/projects ~/src ~/code ~/Developer ~/repos ~/git のうち存在するもの
+# 省略時は ~/dev ~/work ~/projects ~/src ~/code ~/Developer ~/repos ~/git ~/Documents/GitHub ~/source/repos のうち存在するもの
 # roots = ["~/dev"]
 exclude = ["/_archive/", "/node_modules/"]
 max_depth = 6

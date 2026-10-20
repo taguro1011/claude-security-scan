@@ -4,6 +4,17 @@
 set -euo pipefail
 umask 077   # ログには指摘の一覧が入るので本人だけが読めるようにする
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Windows の Git Bash から呼ばれたら PowerShell 版（タスクスケジューラ）に任せる。引数は 曜日(0-6) 時 分 / --remove
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ps="$(cygpath -w "$ROOT/scripts/install-schedule.ps1")"
+    if [ "${1:-}" = "--remove" ]; then exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps" -Remove; fi
+    days=(Sunday Monday Tuesday Wednesday Thursday Friday Saturday)
+    wd="${1:-1}"; [[ "$wd" =~ ^[0-6]$ ]] || { echo "曜日は 0-6（日=0）で指定してください" >&2; exit 1; }
+    hh="${2:-8}"; mm="${3:-0}"
+    [[ "$hh" =~ ^[0-9]{1,2}$ && "$mm" =~ ^[0-9]{1,2}$ ]] && (( 10#$hh <= 23 && 10#$mm <= 59 )) || { echo "時は0-23、分は0-59で指定してください" >&2; exit 1; }
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps" -Day "${days[$wd]}" -Time "$((10#$hh)):$(printf '%02d' "$((10#$mm))")" ;;
+esac
 LABEL="local.security-scan"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 PY="$(command -v python3)"

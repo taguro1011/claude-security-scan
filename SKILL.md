@@ -1,6 +1,6 @@
 ---
 name: security-scan
-description: 開発者のPC・手元のgitリポジトリ・GitHub・Vercelと公開サイト・クラウド（AWS / Google Cloud / Azure / Cloudflare / Supabase）・Gmailを読み取り専用で横断スキャンし、重要度別のHTMLレポートと前回からの差分を出すスキル。「セキュリティチェックして」「セキュリティスキャン」「脆弱性ないか見て」「APIキー漏れてない？」「乗っ取られてないか確認」「新しく出たリスクだけ教えて」「毎週スキャンを設定して」等で使う。設定の変更・送信・削除はしない。直すときは1件ずつ利用者の承認を取る。
+description: 開発者のPC（Mac / Windows）・手元のgitリポジトリ・GitHub・Vercelと公開サイト・クラウド（AWS / Google Cloud / Azure / Cloudflare / Supabase）・Gmailを読み取り専用で横断スキャンし、重要度別のHTMLレポートと前回からの差分を出すスキル。「セキュリティチェックして」「セキュリティスキャン」「脆弱性ないか見て」「APIキー漏れてない？」「乗っ取られてないか確認」「新しく出たリスクだけ教えて」「毎週スキャンを設定して」等で使う。設定の変更・送信・削除はしない。直すときは1件ずつ利用者の承認を取る。
 ---
 
 # security-scan
@@ -11,14 +11,18 @@ description: 開発者のPC・手元のgitリポジトリ・GitHub・Vercelと�
 ## 1. 初回だけ
 
 ```bash
-python3 --version                      # 3.11 以上が必要（tomllib を使う）
+python3 --version                      # 3.11 以上が必要（tomllib を使う）。Windows では py --version
 bash "$SKILL/scripts/install-tools.sh"  # gitleaks と osv-scanner を公式リリースから取得し SHA256 を検証
 ```
+
+Windows の Claude Code（Git Bash）からは同じ `bash "$SKILL/scripts/install-tools.sh"` で PowerShell 版
+（`scripts/install-tools.ps1`）が動く。Python は `python3` ではなく `py`（または `python`）で呼ぶ。
 
 各CLIは**入っているものだけ**使う。無いモジュールは「確認できなかった項目」に理由つきで出るだけで、止まらない。
 
 | モジュール | 必要なもの | 見るもの |
 |---|---|---|
+| `windows` | Windows（管理者権限は不要） | ディスク暗号化（BitLocker）・ウイルス対策と定義ファイル・ファイアウォール・サポート切れのWindows・更新の滞り／未適用の更新・UAC・自動ログオン（平文パスワード）・スリープ復帰時のサインイン・外から接続できるポート・リモートデスクトップ（NLA）・SMBv1・セキュアブート・Guest／管理者アカウント・SSH鍵や秘密情報ファイルのアクセス権・常駐（一時フォルダ起動・難読化PowerShell・SYSTEMサービスの穴） |
 | `mac` | macOS | FileVault・ファイアウォール・Gatekeeper・SIP・自動ログイン・画面ロック・未適用アップデート・外から接続できるポート・~/.ssh の権限・常駐プログラム（root常駐が書き換え可能／未署名のバイナリを起動していないか） |
 | `repos` | gitleaks / osv-scanner | 手元の全gitリポジトリのコミット履歴にある秘密情報（値は伏せ字）・.env のgit登録・依存パッケージの既知脆弱性 |
 | `github` | `gh auth login` 済み | 本人と所属orgの2FA・2FA必須設定・未設定メンバー・公開リポ作成権限・外部コラボレーター・Webhook・Dependabot / Secret scanning |
@@ -40,7 +44,10 @@ python3 "$SKILL/scan.py"                 # 全部（リポジトリが多いと1
 python3 "$SKILL/scan.py" --skip repos    # 重いコード検査を外す（数分）
 python3 "$SKILL/scan.py" --only mac,gmail --open
 python3 "$SKILL/scan.py" --demo --open   # 見本データでレポートの見た目だけ確認（何もスキャンしない）
+py "$SKILL/scan.py" --only windows --open  # Windows: 本体だけ（数分）
 ```
+
+`mac` / `windows` は自分のOSのものだけが自動で選ばれる。
 
 結果は `$SKILL/reports/<日時>/` に `report.html`（絞り込み付き）・`summary.md`・`findings.json`。最新は `reports/latest/`。
 長くかかるのでバックグラウンドで実行し、終わったら `reports/latest/findings.json` を読む。
@@ -70,9 +77,14 @@ bash "$SKILL/scripts/install-schedule.sh" 0 21 0   # 日曜 21:00 にしたい�
 bash "$SKILL/scripts/install-schedule.sh" --remove
 ```
 
-Linux では crontab に入れる1行を表示する。
+Windows（Git Bash）では同じコマンドでタスクスケジューラに登録する（`scripts/install-schedule.ps1`。PowerShell から直接
+`-Day Sunday -Time 21:00` / `-Remove` でも可）。Linux では crontab に入れる1行を表示する。
 
 ## つまずき
+
+- Windows で `windows` が丸ごと error → グループポリシーで PowerShell スクリプトの実行が禁止されている可能性。会社の情シスに確認する（ポリシーを勝手に変えない）
+- Windows で文字化け → `py -X utf8 "$SKILL/scan.py"` で実行する
+- Windows のディスク暗号化が「確認できなかった」→ 設定 → プライバシーとセキュリティ →「デバイスの暗号化」または コントロールパネルの BitLocker 画面で本人に確認してもらう
 
 - `aws ... SSOの期限切れ` → `aws sso login --profile <名前>`
 - `gog ... invalid_grant` → `gog auth add <メール>` で再認証（ブラウザでの本人操作）
