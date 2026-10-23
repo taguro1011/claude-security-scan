@@ -266,6 +266,7 @@ class ReviewFixes(unittest.TestCase):
 
     def test_modern_standby_never(self):
         self.assertIn("スリープ復帰時にサインインを求めない設定", titles(run(screenlock={"delay_lock": 4294967295, "wake_ac": 1, "wake_dc": 1})))
+        self.assertIn("スリープ復帰時にサインインを求めない設定", titles(run(screenlock={"delay_lock": -1, "wake_ac": 1, "wake_dc": 1})))  # PowerShell は DWORD を -1 で返す
         self.assertEqual(titles(run(screenlock={"delay_lock": 0, "wake_ac": 0, "wake_dc": 0})), [])
 
     def test_smb1_server_driver(self):

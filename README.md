@@ -13,6 +13,25 @@ Mac / Windows 本体・手元の全gitリポジトリ・GitHub・Vercelと公開
 
 </details>
 
+## パソコンに詳しくない人向け：ダブルクリック版「PCけんこう診断」
+
+Python もインストールも要りません。Windows 10 / 11 のPCで、ファイルを1つダブルクリックするだけです。
+
+1. **[PCけんこう診断.cmd をダウンロード](https://github.com/taguro1011/claude-security-scan/raw/main/PC%E3%81%91%E3%82%93%E3%81%93%E3%81%86%E8%A8%BA%E6%96%AD.cmd)**
+2. ダウンロードしたファイルをダブルクリック（初回に「発行元を確認できませんでした」等の警告が出たら「実行」）
+3. 1〜3分待つと、ブラウザで結果が開きます
+
+- 🔴すぐ対応 / 🟡できれば対応 / ❔確認できなかった / 🟢問題なし の4つに分けて、専門用語なしで「何が起きるか」「どうすればいいか」を表示します
+- 見るのは、Windowsのサポート期限・更新・ディスクの暗号化・ウイルス対策・ファイアウォール・スリープ復帰時のサインイン・自動ログオン・リモートデスクトップ・SMBv1・UAC・Guestアカウント・怪しい自動起動・外から接続できる入口
+- 設定は何も変えません。管理者権限も不要で、インターネットにも何も送りません。結果は「ドキュメント\PCけんこう診断」に保存されます
+- メールで渡す場合、Gmail などは `.cmd` ファイルの添付を受け付けないので、上のダウンロードリンクを送ってください
+
+<details><summary>結果画面の見本（問題が多いPCの例・見本データ）</summary>
+
+![PCけんこう診断の見本](docs/easy-demo-bad.png)
+
+</details>
+
 > このリポジトリは [chaenmasahiro0425/claude-security-scan](https://github.com/chaenmasahiro0425/claude-security-scan)（MIT License）のフォークです。
 > Mac 向けだった元のツールに、**Windows 本体のチェック**と **Windows で動かすための修正**を加えています。元の設計（読み取り専用・秘密は伏せ字・「確認できなかった」と「問題なし」を混同しない）はそのまま引き継いでいます。
 
@@ -133,6 +152,7 @@ bash ~/.claude/skills/security-scan/scripts/install-schedule.sh   # 毎週月曜
 ## 開発
 
 判定ロジックのテストは Windows 以外でも回せます（PowerShell の出力を偽物にしてテストしています）。
+ダブルクリック版のテストには PowerShell（pwsh）が必要です（無ければ自動でスキップ）。
 
 ```bash
 python3 -m unittest discover -s tests

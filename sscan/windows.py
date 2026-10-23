@@ -385,7 +385,7 @@ def _screenlock(r: Result, v: dict | None):
     v = v or {}
     delay = _int(v.get("delay_lock"))
     if delay is not None:  # Modern Standby のPC（設定の「再度サインインを求めるタイミング」がこの値）
-        if delay == 0xFFFFFFFF:
+        if delay in (0xFFFFFFFF, -1):  # 「しない」。レジストリの DWORD は PowerShell から -1 で読める
             r.add(M, "medium", "スリープ復帰時にサインインを求めない設定", PC, "「再度サインインを求めるタイミング」が「しない」",
                   "設定 → アカウント → サインイン オプション →「しばらく操作しなかった場合に再度サインインを求めるタイミング」を「PCのスリープを解除する時間」などにする。離席時は Win+L")
         else:
